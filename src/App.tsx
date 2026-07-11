@@ -516,6 +516,8 @@ export default function App() {
   const isRecognitionTemporarilySuspendedRef = useRef(false);
   const autoSendTimeoutRef = useRef<any>(null);
   const latestMessageRef = useRef("");
+  const activeSpokenTextRef = useRef("");
+  const activeUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
 
   useEffect(() => {
     isSunnyWokenRef.current = isSunnyWoken;
@@ -685,18 +687,6 @@ export default function App() {
       rec.lang = "en-US";
 
       rec.onresult = (event: any) => {
-        // If Sunny is currently speaking, let the user interrupt by talking!
-        if (isSpeakingRef.current) {
-          try {
-            if (typeof window !== "undefined" && window.speechSynthesis) {
-              window.speechSynthesis.cancel();
-            }
-          } catch (e) {
-            console.log("SpeechSynthesis cancel skipped:", e);
-          }
-          setIsSpeaking(false);
-        }
-
         let interimTranscript = "";
         let finalTranscript = "";
 
@@ -711,6 +701,26 @@ export default function App() {
 
         const combinedText = (finalTranscript || interimTranscript).trim();
         if (!combinedText) return;
+
+        // If Sunny is currently speaking, check if the heard speech is just an echo of his own voice
+        if (isSpeakingRef.current) {
+          if (isSelfEcho(combinedText, activeSpokenTextRef.current)) {
+            console.log("[Acoustic Echo Filter] Filtered out self-echo:", combinedText);
+            return;
+          } else {
+            console.log("[Acoustic Interruption] User interrupted speech with:", combinedText);
+            try {
+              if (typeof window !== "undefined" && window.speechSynthesis) {
+                window.speechSynthesis.cancel();
+              }
+            } catch (e) {
+              console.log("SpeechSynthesis cancel skipped:", e);
+            }
+            setIsSpeaking(false);
+            activeSpokenTextRef.current = "";
+            activeUtteranceRef.current = null;
+          }
+        }
 
         // Wake word scanning: "Hey Sunny" / "Sunny"
         const wakeRegex = /\b(hey\s+)?(sunny|suni|sonny|suny)\b/i;
@@ -912,6 +922,24 @@ export default function App() {
     }
   };
 
+  const isSelfEcho = (transcribed: string, spoken: string): boolean => {
+    const cleanStr = (str: string) => str.toLowerCase().replace(/[^a-z0-9\s]/g, "").replace(/\s+/g, " ").trim();
+    const cleanSpoken = cleanStr(spoken);
+    const cleanTrans = cleanStr(transcribed);
+    
+    if (!cleanTrans) return true;
+    if (cleanSpoken.includes(cleanTrans)) return true;
+    
+    // Word overlap check (for slight transcription variations)
+    const transWords = cleanTrans.split(" ");
+    const spokenWords = cleanSpoken.split(" ");
+    let matchCount = 0;
+    for (const w of transWords) {
+      if (spokenWords.includes(w)) matchCount++;
+    }
+    return (matchCount / transWords.length) >= 0.6;
+  };
+
   // Synthesize custom voice response
   const speakTextReflections = (text: string) => {
     try {
@@ -943,6 +971,8 @@ export default function App() {
         }
       }
 
+      activeSpokenTextRef.current = printableText;
+
       // Check if Piper TTS is enabled and initialized
       if (localStorage.getItem("system_speak_use_piper") === "true" && piperEngine.isLoaded()) {
         try {
@@ -953,7 +983,10 @@ export default function App() {
           rate: activeRate,
           pitch: storedPitch,
           onStart: () => setIsSpeaking(true),
-          onEnd: () => setIsSpeaking(false)
+          onEnd: () => {
+            setIsSpeaking(false);
+            activeSpokenTextRef.current = "";
+          }
         });
         return;
       }
@@ -967,6 +1000,7 @@ export default function App() {
       }
 
       const utterance = new SpeechSynthesisUtterance(printableText);
+      activeUtteranceRef.current = utterance;
       const storedVoiceName = localStorage.getItem("system_speak_voice");
       const voices = window.speechSynthesis.getVoices();
       let selectedVoice = voices.find((v) => v.name === storedVoiceName);
@@ -995,16 +1029,22 @@ export default function App() {
 
       utterance.onend = () => {
         setIsSpeaking(false);
+        activeSpokenTextRef.current = "";
+        activeUtteranceRef.current = null;
       };
 
       utterance.onerror = () => {
         setIsSpeaking(false);
+        activeSpokenTextRef.current = "";
+        activeUtteranceRef.current = null;
       };
 
       window.speechSynthesis.speak(utterance);
     } catch (e) {
       console.warn("Speech Synthesis speak failed:", e);
       setIsSpeaking(false);
+      activeSpokenTextRef.current = "";
+      activeUtteranceRef.current = null;
     }
   };
 

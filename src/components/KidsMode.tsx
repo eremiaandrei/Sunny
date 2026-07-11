@@ -600,6 +600,8 @@ export default function KidsMode({ onExit }: KidsModeProps) {
   const isThinkingRef = useRef(false);
   const autoSendTimeoutRef = useRef<any>(null);
   const latestMessageRef = useRef("");
+  const activeSpokenTextRef = useRef("");
+  const activeUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
 
   useEffect(() => {
     isSunnyWokenRef.current = isSunnyWoken;
@@ -769,13 +771,6 @@ export default function KidsMode({ onExit }: KidsModeProps) {
       rec.lang = "en-US";
 
       rec.onresult = (event: any) => {
-        if (isSpeakingRef.current) {
-          if (window.speechSynthesis) {
-            window.speechSynthesis.cancel();
-          }
-          setIsSpeaking(false);
-        }
-
         let interimTranscript = "";
         let finalTranscript = "";
 
@@ -790,6 +785,26 @@ export default function KidsMode({ onExit }: KidsModeProps) {
 
         const combinedText = (finalTranscript || interimTranscript).trim();
         if (!combinedText) return;
+
+        // If Sunny is currently speaking, check if the heard speech is just an echo of his own voice
+        if (isSpeakingRef.current) {
+          if (isSelfEcho(combinedText, activeSpokenTextRef.current)) {
+            console.log("[Acoustic Echo Filter] Filtered out self-echo:", combinedText);
+            return;
+          } else {
+            console.log("[Acoustic Interruption] User interrupted speech with:", combinedText);
+            try {
+              if (typeof window !== "undefined" && window.speechSynthesis) {
+                window.speechSynthesis.cancel();
+              }
+            } catch (e) {
+              console.log("SpeechSynthesis cancel skipped:", e);
+            }
+            setIsSpeaking(false);
+            activeSpokenTextRef.current = "";
+            activeUtteranceRef.current = null;
+          }
+        }
 
         const wakeRegex = /\b(hey\s+)?(sunny|suni|sonny|suny)\b/i;
         const hasWakeWord = wakeRegex.test(combinedText);
@@ -966,6 +981,24 @@ export default function KidsMode({ onExit }: KidsModeProps) {
     }
   };
 
+  const isSelfEcho = (transcribed: string, spoken: string): boolean => {
+    const cleanStr = (str: string) => str.toLowerCase().replace(/[^a-z0-9\s]/g, "").replace(/\s+/g, " ").trim();
+    const cleanSpoken = cleanStr(spoken);
+    const cleanTrans = cleanStr(transcribed);
+    
+    if (!cleanTrans) return true;
+    if (cleanSpoken.includes(cleanTrans)) return true;
+    
+    // Word overlap check (for slight transcription variations)
+    const transWords = cleanTrans.split(" ");
+    const spokenWords = cleanSpoken.split(" ");
+    let matchCount = 0;
+    for (const w of transWords) {
+      if (spokenWords.includes(w)) matchCount++;
+    }
+    return (matchCount / transWords.length) >= 0.6;
+  };
+
   const speakTextReflections = (text: string) => {
     if (!isAudioFeedbackActive) return;
 
@@ -981,6 +1014,8 @@ export default function KidsMode({ onExit }: KidsModeProps) {
     const storedPitch = parseFloat(localStorage.getItem("system_speak_pitch") || "1.0");
     const storedRateVal = parseFloat(localStorage.getItem("system_speak_rate_val") || "0.96");
 
+    activeSpokenTextRef.current = printableText;
+
     // Check if Piper is active
     if (localStorage.getItem("system_speak_use_piper") === "true" && piperEngine.isLoaded()) {
       try {
@@ -991,7 +1026,10 @@ export default function KidsMode({ onExit }: KidsModeProps) {
         rate: storedRateVal,
         pitch: storedPitch,
         onStart: () => setIsSpeaking(true),
-        onEnd: () => setIsSpeaking(false)
+        onEnd: () => {
+          setIsSpeaking(false);
+          activeSpokenTextRef.current = "";
+        }
       });
       return;
     }
@@ -1001,6 +1039,7 @@ export default function KidsMode({ onExit }: KidsModeProps) {
     window.speechSynthesis.cancel();
 
     const utterance = new SpeechSynthesisUtterance(printableText);
+    activeUtteranceRef.current = utterance;
     
     const storedVoiceName = localStorage.getItem("system_speak_voice");
     const voices = window.speechSynthesis.getVoices();
@@ -1029,10 +1068,14 @@ export default function KidsMode({ onExit }: KidsModeProps) {
 
     utterance.onend = () => {
       setIsSpeaking(false);
+      activeSpokenTextRef.current = "";
+      activeUtteranceRef.current = null;
     };
 
     utterance.onerror = () => {
       setIsSpeaking(false);
+      activeSpokenTextRef.current = "";
+      activeUtteranceRef.current = null;
     };
 
     window.speechSynthesis.speak(utterance);
@@ -1043,6 +1086,7 @@ export default function KidsMode({ onExit }: KidsModeProps) {
     const storedRateVal = parseFloat(localStorage.getItem("system_speak_rate_val") || "0.95");
 
     setIsReadingLunaLetter(true);
+    activeSpokenTextRef.current = text;
 
     if (localStorage.getItem("system_speak_use_piper") === "true" && piperEngine.isLoaded()) {
       try {
@@ -1059,6 +1103,7 @@ export default function KidsMode({ onExit }: KidsModeProps) {
         onEnd: () => {
           setIsSpeaking(false);
           setIsReadingLunaLetter(false);
+          activeSpokenTextRef.current = "";
         }
       });
       return;
@@ -1069,6 +1114,7 @@ export default function KidsMode({ onExit }: KidsModeProps) {
     window.speechSynthesis.cancel();
 
     const utterance = new SpeechSynthesisUtterance(text);
+    activeUtteranceRef.current = utterance;
     
     const storedVoiceName = localStorage.getItem("system_speak_voice");
     const voices = window.speechSynthesis.getVoices();
@@ -1099,11 +1145,15 @@ export default function KidsMode({ onExit }: KidsModeProps) {
     utterance.onend = () => {
       setIsSpeaking(false);
       setIsReadingLunaLetter(false);
+      activeSpokenTextRef.current = "";
+      activeUtteranceRef.current = null;
     };
 
     utterance.onerror = () => {
       setIsSpeaking(false);
       setIsReadingLunaLetter(false);
+      activeSpokenTextRef.current = "";
+      activeUtteranceRef.current = null;
     };
 
     window.speechSynthesis.speak(utterance);
