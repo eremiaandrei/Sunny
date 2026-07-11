@@ -594,11 +594,16 @@ export default function KidsMode({ onExit }: KidsModeProps) {
 
   // Sunny custom voice hands-free coordination engine
   const [isSunnyWoken, setIsSunnyWoken] = useState(false);
+  const isSunnyWokenRef = useRef(false);
   const isListeningRef = useRef(false);
   const isSpeakingRef = useRef(false);
   const isThinkingRef = useRef(false);
   const autoSendTimeoutRef = useRef<any>(null);
   const latestMessageRef = useRef("");
+
+  useEffect(() => {
+    isSunnyWokenRef.current = isSunnyWoken;
+  }, [isSunnyWoken]);
 
   useEffect(() => {
     isListeningRef.current = isListening;
@@ -787,9 +792,12 @@ export default function KidsMode({ onExit }: KidsModeProps) {
         if (!combinedText) return;
 
         const wakeRegex = /\b(hey\s+)?(sunny|suni|sonny|suny)\b/i;
-        if (wakeRegex.test(combinedText)) {
+        const hasWakeWord = wakeRegex.test(combinedText);
+
+        if (hasWakeWord) {
           setIsSunnyWoken(true);
           setTypingExcitement(1.0);
+          playPingSound("wakeup");
 
           const commandText = combinedText.replace(wakeRegex, "").replace(/^[,.\s]+/, "").trim();
           
@@ -798,12 +806,10 @@ export default function KidsMode({ onExit }: KidsModeProps) {
             
             if (autoSendTimeoutRef.current) clearTimeout(autoSendTimeoutRef.current);
             autoSendTimeoutRef.current = setTimeout(() => {
-              playPingSound("wakeup");
               handleSendMessage(undefined, commandText);
               setIsSunnyWoken(false);
-            }, 1300);
+            }, 1400);
           } else {
-            playPingSound("wakeup");
             setUserInput("");
             
             if (autoSendTimeoutRef.current) clearTimeout(autoSendTimeoutRef.current);
@@ -817,27 +823,33 @@ export default function KidsMode({ onExit }: KidsModeProps) {
             const chosen = greetings[Math.floor(Math.random() * greetings.length)];
             speakTextReflections(chosen);
 
-            setTimeout(() => {
-              setIsSunnyWoken(false);
-            }, 4000);
-          }
-        } else {
-          if (finalTranscript) {
-            setUserInput((prev) => {
-              const cleanedPrev = prev.trim();
-              const cleanedFinal = finalTranscript.trim();
-              return cleanedPrev ? cleanedPrev + " " + cleanedFinal : cleanedFinal;
-            });
-            setTypingExcitement((prev) => Math.min(1.0, prev + 0.35));
-
+            // Keep woken state active for a 6-second window
             if (autoSendTimeoutRef.current) clearTimeout(autoSendTimeoutRef.current);
             autoSendTimeoutRef.current = setTimeout(() => {
-              const textToSend = latestMessageRef.current.trim();
-              if (textToSend.length > 2) {
-                playPingSound("success");
-                handleSendMessage(undefined, textToSend);
-              }
-            }, 1700);
+              setIsSunnyWoken(false);
+            }, 6000);
+          }
+        } else {
+          // Process speech ONLY if the assistant is already in the woken state
+          if (isSunnyWokenRef.current) {
+            if (finalTranscript) {
+              setUserInput((prev) => {
+                const cleanedPrev = prev.trim();
+                const cleanedFinal = finalTranscript.trim();
+                return cleanedPrev ? cleanedPrev + " " + cleanedFinal : cleanedFinal;
+              });
+              setTypingExcitement((prev) => Math.min(1.0, prev + 0.35));
+
+              if (autoSendTimeoutRef.current) clearTimeout(autoSendTimeoutRef.current);
+              autoSendTimeoutRef.current = setTimeout(() => {
+                const textToSend = latestMessageRef.current.trim();
+                if (textToSend.length > 2) {
+                  playPingSound("success");
+                  handleSendMessage(undefined, textToSend);
+                }
+                setIsSunnyWoken(false); // Go back to sleep after sending
+              }, 1700);
+            }
           }
         }
       };
