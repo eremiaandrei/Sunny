@@ -2,7 +2,6 @@ import express from "express";
 import path from "path";
 import dotenv from "dotenv";
 import { GoogleGenAI, Type } from "@google/genai";
-import { createServer as createViteServer } from "vite";
 
 // Load environment variables
 dotenv.config();
@@ -599,6 +598,7 @@ async function setupServer() {
     console.log("Initializing Vite development middleware...");
     const tailwindcss = (await import('@tailwindcss/vite')).default;
     const react = (await import('@vitejs/plugin-react')).default;
+    const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
       configFile: false,
       plugins: [react(), tailwindcss()],
