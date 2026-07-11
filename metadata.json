@@ -1,0 +1,6 @@
+{
+  "name": "Sunny Kinetic AI Engine",
+  "description": "A pristine, self-reflective unbranded interactive quantum thought visualizer, modeling a high-density particulate fluid field reacting to mouse gravity and direct conversational reflections, powered by Sunny AI.",
+  "requestFramePermissions": ["camera", "microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
