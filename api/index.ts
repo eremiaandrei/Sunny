@@ -10,7 +10,9 @@ dotenv.config();
 const app = express();
 const PORT = Number(process.env.PORT) || 3005;
 
-app.use(express.json());
+if (!process.env.VERCEL) {
+  app.use(express.json());
+}
 
 // Initialize Gemini SDK with telemetry User-Agent
 let ai: GoogleGenAI | null = null;
