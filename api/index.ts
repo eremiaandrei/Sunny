@@ -231,7 +231,7 @@ async function generateContentWithFallback(params: {
   config: any;
 }) {
   if (!ai) throw new Error("AI SDK not initialized.");
-  const modelsToTry = ["gemini-3.5-flash", "gemini-3.1-flash-lite", "gemini-flash-latest"];
+  const modelsToTry = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"];
   let lastError: any = null;
 
   for (const modelName of modelsToTry) {
